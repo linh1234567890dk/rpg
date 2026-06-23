@@ -11,6 +11,7 @@ import 'components/skill_button.dart';
 import 'components/aim_indicator.dart';
 import 'components/target_lock_indicator.dart';
 import 'components/boss.dart';
+import 'components/ranged_enemy.dart';
 
 class RPGGame extends FlameGame with HasCollisionDetection {
   late final Player player;
@@ -18,8 +19,14 @@ class RPGGame extends FlameGame with HasCollisionDetection {
   late final AimIndicator aimIndicator;
   late final TargetLockIndicator targetLockIndicator;
   
+  // Giữ tham chiếu tới các nút skill để cập nhật vị trí khi resize
+  SkillButton? attackButton;
+  SkillButton? skillButton;
+  SkillButton? dashButton;
+  
   int score = 0;
   bool bossSpawned = false;
+  bool _buttonsInitialized = false;
 
   @override
   Future<void> onLoad() async {
@@ -44,27 +51,25 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     targetLockIndicator.priority = -1; // Nằm dưới quái
     
     // 4. Setup Skill Buttons (Bên phải)
-    final vpSize = camera.viewport.size;
-    
-    final attackButton = SkillButton(
+    attackButton = SkillButton(
       type: SkillType.normal,
-      position: Vector2(vpSize.x - 80, vpSize.y - 80),
+      position: Vector2.zero(),
       cooldown: 0.5,
       onAction: () => _handleSkill(SkillType.normal, null),
       onAimAction: (dir) => _handleSkill(SkillType.normal, dir),
     );
 
-    final skillButton = SkillButton(
+    skillButton = SkillButton(
       type: SkillType.special,
-      position: Vector2(vpSize.x - 170, vpSize.y - 70),
+      position: Vector2.zero(),
       cooldown: 3.0,
       onAction: () => _handleSkill(SkillType.special, null),
       onAimAction: (dir) => _handleSkill(SkillType.special, dir),
     );
 
-    final dashButton = SkillButton(
+    dashButton = SkillButton(
       type: SkillType.dash,
-      position: Vector2(vpSize.x - 90, vpSize.y - 180),
+      position: Vector2.zero(),
       cooldown: 1.5,
       onAction: () {
         final dir = Vector2(player.scale.x > 0 ? 1 : -1, 0);
@@ -72,6 +77,12 @@ class RPGGame extends FlameGame with HasCollisionDetection {
       },
       onAimAction: (dir) => _handleSkill(SkillType.dash, dir),
     );
+
+    // Thêm vào viewport (HUD)
+    camera.viewport.add(joystick);
+    camera.viewport.add(attackButton!);
+    camera.viewport.add(skillButton!);
+    camera.viewport.add(dashButton!);
 
     // Add components to World
     world.add(player);
@@ -82,14 +93,54 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     camera.viewfinder.anchor = Anchor.center;
     camera.follow(player);
 
-    // Add components to Viewport (HUD)
-    camera.viewport.add(joystick);
-    camera.viewport.add(attackButton);
-    camera.viewport.add(skillButton);
-    camera.viewport.add(dashButton);
-
     // Thêm thanh máu của người chơi lên HUD
     _setupPlayerHPBar();
+    
+    // Layout nút skill lần đầu
+    _buttonsInitialized = true;
+    _layoutButtons();
+  }
+
+  /// Căn chỉnh lại vị trí các nút skill dựa trên kích thước viewport hiện tại
+  void _layoutButtons() {
+    // onGameResize() có thể được gọi TRƯỚC onLoad(), nên cần kiểm tra flag
+    if (!_buttonsInitialized) return;
+    final atk = attackButton;
+    final sk = skillButton;
+    final dsh = dashButton;
+    if (atk == null || sk == null || dsh == null) return;
+
+    final vpSize = camera.viewport.size;
+    if (vpSize.x <= 0 || vpSize.y <= 0) return;
+
+    // Tính toán kích thước nút dựa trên màn hình (tối thiểu 60, tối đa 80)
+    final buttonSize = (vpSize.x / 8).clamp(60.0, 80.0);
+    final padding = buttonSize * 0.3; // Khoảng cách giữa các nút
+
+    // Đặt nút ATK ở góc dưới-phải
+    atk.size = Vector2.all(buttonSize);
+    atk.position = Vector2(vpSize.x - buttonSize / 2 - 20, vpSize.y - buttonSize / 2 - 20);
+
+    // Đặt nút SKILL ở bên trái ATK
+    sk.size = Vector2.all(buttonSize);
+    sk.position = Vector2(
+      vpSize.x - buttonSize * 1.5 - padding - 20,
+      vpSize.y - buttonSize / 2 - 20,
+    );
+
+    // Đặt nút DASH ở phía trên ATK
+    dsh.size = Vector2.all(buttonSize);
+    dsh.position = Vector2(
+      vpSize.x - buttonSize / 2 - 20,
+      vpSize.y - buttonSize * 1.5 - padding - 20,
+    );
+  }
+
+  @override
+  void onGameResize(Vector2 size) {
+    super.onGameResize(size);
+    // Cập nhật lại vị trí các nút khi màn hình thay đổi kích thước
+    _layoutButtons();
   }
 
   void _setupPlayerHPBar() {
@@ -181,12 +232,15 @@ class RPGGame extends FlameGame with HasCollisionDetection {
         break;
     }
 
-    final enemy = Enemy(position: spawnPos);
-    world.add(enemy);
+    // Random: 40% ranged enemy, 60% melee enemy
+    if (rnd.nextDouble() < 0.4) {
+      world.add(RangedEnemy(position: spawnPos));
+    } else {
+      world.add(Enemy(position: spawnPos));
+    }
   }
 
   void shake({double intensity = 5, double duration = 0.2}) {
-    // Tạo hiệu ứng rung bằng cách di chuyển camera nhanh
     final rnd = math.Random();
     for (int i = 0; i < 10; i++) {
       camera.viewfinder.add(
@@ -209,8 +263,7 @@ class RPGGame extends FlameGame with HasCollisionDetection {
   }
 
   void showHitEffect(Vector2 position, Color color) {
-    // Tạo 8 hạt bắn ra từ vị trí va chạm
-    add(
+    world.add(
       ParticleSystemComponent(
         particle: Particle.generate(
           count: 8,
@@ -248,7 +301,6 @@ class RPGGame extends FlameGame with HasCollisionDetection {
         player.dash(direction);
       }
     } else {
-      // Nếu là Normal Attack thì là cận chiến, Special là bắn xa
       final isMelee = type == SkillType.normal;
       player.attack(direction, isMelee: isMelee);
     }

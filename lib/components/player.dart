@@ -66,7 +66,6 @@ class Player extends PositionComponent
       }
 
       position.add(dashDirection * dashSpeed * dt);
-      keepInBounds();
       
       if (dashTimer <= 0) {
         isDashing = false;
@@ -99,8 +98,8 @@ class Player extends PositionComponent
     // Các vật thể ở dưới sẽ đè lên vật thể ở trên
     priority = position.y.toInt();
 
-    // Giữ nhân vật trong màn hình
-    keepInBounds();
+    // KHÔNG giữ nhân vật trong viewport nữa vì camera đã follow player
+    // keepInBounds(); // ❌ Sai: game.size là viewport size, không phải world size
 
     _updateTargetLock();
   }
@@ -157,11 +156,11 @@ class Player extends PositionComponent
     }
     
     if (isMelee) {
-      game.add(MeleeSlash(position: position.clone(), direction: shootDir));
+      game.world.add(MeleeSlash(position: position.clone(), direction: shootDir));
       // Rung nhẹ khi chém
       game.shake(intensity: 1);
     } else {
-      game.add(Bullet(position: position.clone(), direction: shootDir));
+      game.world.add(Bullet(position: position.clone(), direction: shootDir));
     }
   }
 
@@ -203,10 +202,13 @@ class Player extends PositionComponent
     }
   }
 
-  void keepInBounds() {
-    if (position.x < 0) position.x = 0;
-    if (position.y < 0) position.y = 0;
-    if (position.x > game.size.x) position.x = game.size.x;
-    if (position.y > game.size.y) position.y = game.size.y;
-  }
+  // void keepInBounds() {
+  //   // ❌ KHÔNG dùng hàm này: game.size là viewport size, không phải world size.
+  //   // Camera đã follow player, không cần giữ player trong viewport.
+  //   // Nếu muốn giới hạn world, cần dùng world bounds riêng.
+  //   if (position.x < 0) position.x = 0;
+  //   if (position.y < 0) position.y = 0;
+  //   if (position.x > game.size.x) position.x = game.size.x;
+  //   if (position.y > game.size.y) position.y = game.size.y;
+  // }
 }

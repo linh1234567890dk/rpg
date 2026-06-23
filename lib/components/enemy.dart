@@ -8,12 +8,12 @@ class Enemy extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
   double hp = 50.0;
   final double maxHp = 50.0;
-  final double speed = 50.0;
+  double speed = 50.0;
 
   // Thông số tấn công
-  final double attackRange = 60.0;
-  final double attackCooldown = 1.5;
-  double _remainingAttackCooldown = 0;
+  double attackRange = 60.0;
+  double attackCooldown = 1.5;
+  double remainingAttackCooldown = 0;
 
   // Knockback & Stun
   double stunTimer = 0;
@@ -23,12 +23,17 @@ class Enemy extends PositionComponent
   late final RectangleComponent hpBar;
   late final RectangleComponent ghostHpBar;
 
-  Enemy({required Vector2 position})
-    : super(position: position, size: Vector2.all(40), anchor: Anchor.center);
+  /// Màu sắc gốc — subclass có thể override
+  Color get baseColor => Colors.red;
+  /// Màu khi trúng đòn — subclass có thể override
+  Color get hitColor => Colors.orange;
+
+  Enemy({required Vector2 position, Vector2? size})
+    : super(position: position, size: size ?? Vector2.all(40), anchor: Anchor.center);
 
   @override
   Future<void> onLoad() async {
-    body = RectangleComponent(size: size, paint: Paint()..color = Colors.red);
+    body = RectangleComponent(size: size, paint: Paint()..color = baseColor);
     add(body);
 
     // Thêm collision area
@@ -67,8 +72,8 @@ class Enemy extends PositionComponent
       return; // Không làm gì khác khi bị choáng
     }
 
-    if (_remainingAttackCooldown > 0) {
-      _remainingAttackCooldown -= dt;
+    if (remainingAttackCooldown > 0) {
+      remainingAttackCooldown -= dt;
     }
 
     if (distance > attackRange) {
@@ -76,10 +81,13 @@ class Enemy extends PositionComponent
       final direction = (player.position - position).normalized();
       position.add(direction * speed * dt);
     } else {
-      // Nếu đủ gần, dừng lại và tấn công
-      if (_remainingAttackCooldown <= 0) {
-        _performAttack();
+      // Nếu đủ gần trong phạm vi tấn công, dừng lại và đánh
+      if (remainingAttackCooldown <= 0) {
+        performAttack();
       }
+      // Khi đang trong cooldown, enemy đứng yên để người chơi có cơ hội né
+      // Với RangedEnemy: lùi lại để giữ khoảng cách
+      handleInRange(dt, distance);
     }
 
     // Y-sorting
@@ -106,25 +114,37 @@ class Enemy extends PositionComponent
     }
   }
 
-  void _performAttack() {
-    _remainingAttackCooldown = attackCooldown;
+  void performAttack() {
+    remainingAttackCooldown = attackCooldown;
 
     // Hướng tấn công tới người chơi
     final diff = game.player.position - position;
     final dir = diff.normalized();
+    
+    // Quay mặt về phía người chơi khi đánh
+    if (diff.x < 0 && scale.x > 0) {
+      flipHorizontallyAroundCenter();
+    } else if (diff.x > 0 && scale.x < 0) {
+      flipHorizontallyAroundCenter();
+    }
 
     // Hiệu ứng "gồng" đòn (nháy màu trắng trước khi đánh)
     body.paint.color = Colors.white;
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!isMounted) return;
-      body.paint.color = Colors.red;
+      body.paint.color = baseColor;
 
-      // Tạo hiệu ứng vệt chém thực sự
-      game.add(EnemyAttackEffect(position: position.clone(), direction: dir));
+      // Tạo hiệu ứng vệt chém thực sự — đây là đòn đánh có hitbox riêng
+      game.world.add(EnemyAttackEffect(position: position.clone(), direction: dir));
 
       // Rung nhẹ khi quái tung đòn
       game.shake(intensity: 1);
     });
+  }
+
+  /// Hook cho subclass xử lý khi enemy đang trong phạm vi tấn công (giữa các đòn)
+  void handleInRange(double dt, double distance) {
+    // Mặc định không làm gì — enemy thường đứng yên
   }
 
   void takeDamage(double damage, {Vector2? knockbackDirection}) {
@@ -141,10 +161,10 @@ class Enemy extends PositionComponent
     stunTimer = 0.25;
 
     // Hiệu ứng nháy trắng khi trúng đòn
-    body.paint.color = Colors.orange;
+    body.paint.color = hitColor;
     Future.delayed(const Duration(milliseconds: 100), () {
       if (!isMounted) return;
-      body.paint.color = Colors.red;
+      body.paint.color = baseColor;
     });
   }
 }

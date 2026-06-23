@@ -20,7 +20,7 @@ class TargetLockIndicator extends SpriteAnimationComponent with HasGameReference
         ..strokeWidth = 2,
     )..add(RotateEffect.by(
         6.28, // 360 độ
-        EffectController(duration: 2, repeatCount: -1),
+        EffectController(duration: 2, infinite: true),
       )));
     
     // Hiệu ứng đập nhẹ (Pulse)
