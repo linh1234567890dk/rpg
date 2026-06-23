@@ -8,6 +8,7 @@ import 'melee_slash.dart';
 import 'dash_after_image.dart';
 
 import '../rpg_game.dart';
+import '../world/world_map.dart';
 
 class Player extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
@@ -44,8 +45,8 @@ class Player extends PositionComponent
     body = RectangleComponent(size: size, paint: BasicPalette.white.paint());
     add(body);
 
-    // Đặt vị trí ban đầu tại tâm thế giới (0,0)
-    position = Vector2.zero();
+    // Đặt vị trí ban đầu gần Làng Ánh Dương (2000, 2000)
+    position = Vector2(2000, 2000);
   }
 
   @override
@@ -92,6 +93,11 @@ class Player extends PositionComponent
       } else if (joystick.relativeDelta.x > 0 && scale.x < 0) {
         flipHorizontallyAroundCenter();
       }
+    }
+
+    // Hồi máu khi ở trong safe zone
+    if (WorldMap.isInSafeZone(position)) {
+      hp = (hp + 20 * dt).clamp(0, maxHp);
     }
 
     // Cập nhật priority để tạo hiệu ứng 2.5D (Y-sorting)
@@ -198,7 +204,7 @@ class Player extends PositionComponent
 
     if (hp <= 0) {
       hp = 0;
-      // Xử lý game over ở đây
+      game.gameOver();
     }
   }
 

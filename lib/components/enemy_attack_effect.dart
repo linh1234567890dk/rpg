@@ -7,8 +7,9 @@ class EnemyAttackEffect extends PositionComponent with HasGameReference, Collisi
   final Vector2 direction;
   double lifeTime = 0.2;
   double timer = 0;
+  double damage;
 
-  EnemyAttackEffect({required Vector2 position, required this.direction}) 
+  EnemyAttackEffect({required Vector2 position, required this.direction, this.damage = 10}) 
       : super(position: position, size: Vector2(50, 60), anchor: Anchor.centerLeft) {
     // Xoay vệt chém theo hướng về phía người chơi
     angle = direction.angleToSigned(Vector2(1, 0)) * -1;
@@ -38,7 +39,7 @@ class EnemyAttackEffect extends PositionComponent with HasGameReference, Collisi
   void onCollisionStart(Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollisionStart(intersectionPoints, other);
     if (other is Player) {
-      other.takeDamage(10, knockbackDirection: direction);
+      other.takeDamage(damage, knockbackDirection: direction);
     }
   }
 }

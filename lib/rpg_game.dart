@@ -12,6 +12,9 @@ import 'components/aim_indicator.dart';
 import 'components/target_lock_indicator.dart';
 import 'components/boss.dart';
 import 'components/ranged_enemy.dart';
+import 'components/location_name_popup.dart';
+import 'world/world_map.dart';
+import 'world/terrain_background.dart';
 
 class RPGGame extends FlameGame with HasCollisionDetection {
   late final Player player;
@@ -30,6 +33,9 @@ class RPGGame extends FlameGame with HasCollisionDetection {
 
   @override
   Future<void> onLoad() async {
+    // Đảm bảo viewport size khớp với game size ngay từ đầu
+    camera.viewport.size = size;
+
     // 1. Setup Joystick (Bên trái)
     final knobPaint = BasicPalette.blue.withAlpha(200).paint();
     final backgroundPaint = BasicPalette.blue.withAlpha(100).paint();
@@ -83,6 +89,16 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     camera.viewport.add(attackButton!);
     camera.viewport.add(skillButton!);
     camera.viewport.add(dashButton!);
+
+    // Add terrain background (priority thấp nhất để nằm dưới tất cả)
+    final terrain = TerrainBackground();
+    terrain.priority = -1000;
+    world.add(terrain);
+
+    // Add location name popup (HUD - trong viewport)
+    final locationPopup = LocationNamePopup();
+    locationPopup.priority = 1000;
+    camera.viewport.add(locationPopup);
 
     // Add components to World
     world.add(player);
@@ -139,6 +155,7 @@ class RPGGame extends FlameGame with HasCollisionDetection {
   @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
+    camera.viewport.size = size;
     // Cập nhật lại vị trí các nút khi màn hình thay đổi kích thước
     _layoutButtons();
   }
@@ -213,30 +230,49 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     final cameraPos = camera.viewfinder.position;
     final halfWidth = size.x / 2;
     final halfHeight = size.y / 2;
-    Vector2 spawnPos;
+    Vector2 spawnPos = Vector2.zero();
     
-    int side = rnd.nextInt(4); // 0: Trên, 1: Phải, 2: Dưới, 3: Trái
-    switch (side) {
-      case 0: // Trên
-        spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y - halfHeight - 50);
-        break;
-      case 1: // Phải
-        spawnPos = Vector2(cameraPos.x + halfWidth + 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
-        break;
-      case 2: // Dưới
-        spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y + halfHeight + 50);
-        break;
-      case 3: // Trái
-      default:
-        spawnPos = Vector2(cameraPos.x - halfWidth - 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
-        break;
+    // Thử tối đa 5 lần để tìm vị trí không nằm trong safe zone
+    for (int attempt = 0; attempt < 5; attempt++) {
+      int side = rnd.nextInt(4); // 0: Trên, 1: Phải, 2: Dưới, 3: Trái
+      switch (side) {
+        case 0: // Trên
+          spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y - halfHeight - 50);
+          break;
+        case 1: // Phải
+          spawnPos = Vector2(cameraPos.x + halfWidth + 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
+          break;
+        case 2: // Dưới
+          spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y + halfHeight + 50);
+          break;
+        case 3: // Trái
+        default:
+          spawnPos = Vector2(cameraPos.x - halfWidth - 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
+          break;
+      }
+      // Nếu không trong safe zone thì dùng luôn
+      if (!WorldMap.isInSafeZone(spawnPos)) break;
     }
 
-    // Random: 40% ranged enemy, 60% melee enemy
-    if (rnd.nextDouble() < 0.4) {
-      world.add(RangedEnemy(position: spawnPos));
+    // Xác định level quái dựa trên zone player đang đứng
+    final playerZone = WorldMap.zoneAt(player.position);
+    int enemyLevel;
+    bool allowRanged;
+
+    if (playerZone != null) {
+      enemyLevel = rnd.nextInt(playerZone.maxLevel - playerZone.minLevel + 1) + playerZone.minLevel;
+      allowRanged = playerZone.enemyTypes.contains('ranged');
     } else {
-      world.add(Enemy(position: spawnPos));
+      // Fallback: nếu không ở zone nào, level = 1
+      enemyLevel = 1;
+      allowRanged = false;
+    }
+
+    // Spawn theo config zone
+    if (allowRanged && rnd.nextDouble() < 0.4) {
+      world.add(RangedEnemy(position: spawnPos, level: enemyLevel));
+    } else {
+      world.add(Enemy(position: spawnPos, level: enemyLevel));
     }
   }
 
@@ -304,6 +340,49 @@ class RPGGame extends FlameGame with HasCollisionDetection {
       final isMelee = type == SkillType.normal;
       player.attack(direction, isMelee: isMelee);
     }
+  }
+
+  void gameOver() {
+    if (overlays.isActive('gameOver')) return;
+    overlays.add('gameOver');
+  }
+
+  void restart() {
+    overlays.remove('gameOver');
+    world.removeAll(world.children);
+    camera.viewport.removeAll(camera.viewport.children);
+    score = 0;
+    bossSpawned = false;
+    _buttonsInitialized = false;
+
+    // Re-add terrain background
+    final terrain = TerrainBackground();
+    terrain.priority = -1000;
+    world.add(terrain);
+
+    // Re-setup player
+    player = Player(joystick: joystick);
+    world.add(player);
+    world.add(aimIndicator);
+    world.add(targetLockIndicator);
+    camera.follow(player);
+
+    // Re-add location name popup
+    final locationPopup = LocationNamePopup();
+    locationPopup.priority = 1000;
+    camera.viewport.add(locationPopup);
+
+    // Re-add HUD controls
+    camera.viewport.add(joystick);
+    camera.viewport.add(attackButton!);
+    camera.viewport.add(skillButton!);
+    camera.viewport.add(dashButton!);
+
+    // Re-add HP bar
+    _setupPlayerHPBar();
+    
+    // Layout nút skill
+    _layoutButtons();
   }
 
   @override

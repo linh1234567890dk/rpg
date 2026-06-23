@@ -6,14 +6,16 @@ import '../rpg_game.dart';
 
 class Enemy extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
+  int level = 1;
   double hp = 50.0;
-  final double maxHp = 50.0;
+  late final double maxHp;
   double speed = 50.0;
 
   // Thông số tấn công
   double attackRange = 60.0;
   double attackCooldown = 1.5;
   double remainingAttackCooldown = 0;
+  double attackDamage = 10.0;
 
   // Knockback & Stun
   double stunTimer = 0;
@@ -28,8 +30,19 @@ class Enemy extends PositionComponent
   /// Màu khi trúng đòn — subclass có thể override
   Color get hitColor => Colors.orange;
 
-  Enemy({required Vector2 position, Vector2? size})
-    : super(position: position, size: size ?? Vector2.all(40), anchor: Anchor.center);
+  Enemy({required Vector2 position, Vector2? size, this.level = 1})
+    : super(position: position, size: size ?? Vector2.all(40), anchor: Anchor.center) {
+    _applyLevelScaling();
+  }
+
+  /// Scale stats theo level
+  void _applyLevelScaling() {
+    final scale = 1.0 + (level - 1) * 0.3;
+    hp = hp * scale;
+    maxHp = hp;
+    speed = speed * (1.0 + (level - 1) * 0.1);
+    attackDamage = attackDamage * scale;
+  }
 
   @override
   Future<void> onLoad() async {
@@ -135,7 +148,7 @@ class Enemy extends PositionComponent
       body.paint.color = baseColor;
 
       // Tạo hiệu ứng vệt chém thực sự — đây là đòn đánh có hitbox riêng
-      game.world.add(EnemyAttackEffect(position: position.clone(), direction: dir));
+      game.world.add(EnemyAttackEffect(position: position.clone(), direction: dir, damage: attackDamage));
 
       // Rung nhẹ khi quái tung đòn
       game.shake(intensity: 1);

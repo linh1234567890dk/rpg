@@ -8,11 +8,11 @@ class Bullet extends PositionComponent
     with HasGameReference, CollisionCallbacks {
   final Vector2 direction;
   double speed = 400.0;
-  final double damage = 20.0;
+  double damage;
   Color color = Colors.yellow;
   double lifetime = 3.0; // Đạn tự hủy sau 3 giây
 
-  Bullet({required Vector2 position, required this.direction, Color? color})
+  Bullet({required Vector2 position, required this.direction, Color? color, this.damage = 20.0})
     : super(position: position, size: Vector2.all(10), anchor: Anchor.center) {
     if (color != null) this.color = color;
   }

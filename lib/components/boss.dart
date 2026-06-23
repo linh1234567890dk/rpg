@@ -8,7 +8,7 @@ class Boss extends Enemy {
   double phaseTimer = 0;
   int currentPhase = 1;
 
-  Boss({required super.position}) {
+  Boss({required super.position, super.level}) {
     size = Vector2.all(100); // Boss to gấp đôi quái thường
     hp = 500;
   }

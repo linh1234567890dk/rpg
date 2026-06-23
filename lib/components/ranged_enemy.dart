@@ -6,7 +6,7 @@ class RangedEnemy extends Enemy {
   /// Khoảng cách tối ưu để bắn đạn
   final double preferredRange = 200.0;
 
-  RangedEnemy({required super.position, super.size}) {
+  RangedEnemy({required super.position, super.size, super.level}) {
     speed = 30; // Di chuyển chậm hơn (vì đã có đạn)
     attackRange = 250; // Phạm vi phát hiện và bắn từ xa
     attackCooldown = 2.0; // Hồi lâu hơn enemy thường
@@ -50,6 +50,7 @@ class RangedEnemy extends Enemy {
         position: position.clone() + dir * (size.x / 2 + 5),
         direction: dir,
         color: Colors.orange,
+        damage: attackDamage,
       )..speed = 250); // Đạn chậm hơn đạn player (400) nhưng nhanh hơn đạn boss (150)
     });
   }
