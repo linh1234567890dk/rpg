@@ -1,9 +1,18 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
+import '../rpg_game.dart';
 
-class AimIndicator extends PositionComponent {
+class AimIndicator extends PositionComponent with HasGameReference<RPGGame> {
   Vector2 direction = Vector2.zero();
   bool isVisible = false;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (isVisible) {
+      position.setFrom(game.player.position);
+    }
+  }
 
   @override
   void render(Canvas canvas) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rpg/utils/world_config.dart';
 import 'enemy.dart';
 import 'bullet.dart';
 
@@ -10,6 +11,7 @@ class RangedEnemy extends Enemy {
     speed = 30; // Di chuyển chậm hơn (vì đã có đạn)
     attackRange = 250; // Phạm vi phát hiện và bắn từ xa
     attackCooldown = 2.0; // Hồi lâu hơn enemy thường
+    detectionRange = 250.0;
   }
 
   @override
@@ -59,10 +61,10 @@ class RangedEnemy extends Enemy {
   void handleInRange(double dt, double distance) {
     super.handleInRange(dt, distance);
     
-    // Lùi lại khi player đến quá gần
+    // Lùi lại khi player đến quá gần (có tính wrapping)
     if (distance < preferredRange - 30) {
-      final direction = (position - game.player.position).normalized();
-      position.add(direction * speed * 1.5 * dt);
+      final dir = WorldConfig.wrappedDirection(game.player.position, position);
+      position.add(dir * speed * 1.5 * dt);
     }
   }
 }

@@ -3,6 +3,7 @@ import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:rpg/components/player.dart';
 import 'enemy.dart';
+import '../utils/world_config.dart';
 
 class Bullet extends PositionComponent
     with HasGameReference, CollisionCallbacks {
@@ -28,12 +29,45 @@ class Bullet extends PositionComponent
     super.update(dt);
     position.add(direction * speed * dt);
 
-    // Tự hủy sau 3 giây để tránh đạn bay mãi
-    // KHÔNG dùng game.size để check out-of-bounds vì game.size là viewport size,
-    // không phải world size. Camera follow player nên đạn có thể bay ra khỏi viewport.
+    // Wrap position
+    position = WorldConfig.wrapPosition(position);
+
+    // Tự hủy sau 3 giây
     lifetime -= dt;
     if (lifetime <= 0) {
       removeFromParent();
+    }
+  }
+
+  @override
+  void renderTree(Canvas canvas) {
+    super.renderTree(canvas);
+
+    // Ghost copies khi gần mép
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save();
+      canvas.translate(WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save();
+      canvas.translate(-WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save();
+      canvas.translate(0, WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save();
+      canvas.translate(0, -WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
     }
   }
 

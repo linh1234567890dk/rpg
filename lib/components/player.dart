@@ -8,6 +8,7 @@ import 'melee_slash.dart';
 import 'dash_after_image.dart';
 
 import '../rpg_game.dart';
+import '../utils/world_config.dart';
 import '../world/world_map.dart';
 
 class Player extends PositionComponent
@@ -95,13 +96,15 @@ class Player extends PositionComponent
       }
     }
 
+    // Wrap position (seamless world)
+    position = WorldConfig.wrapPosition(position);
+
     // Hồi máu khi ở trong safe zone
     if (WorldMap.isInSafeZone(position)) {
       hp = (hp + 20 * dt).clamp(0, maxHp);
     }
 
     // Cập nhật priority để tạo hiệu ứng 2.5D (Y-sorting)
-    // Các vật thể ở dưới sẽ đè lên vật thể ở trên
     priority = position.y.toInt();
 
     // KHÔNG giữ nhân vật trong viewport nữa vì camera đã follow player
@@ -117,7 +120,7 @@ class Player extends PositionComponent
     final enemies = game.world.children.whereType<Enemy>();
     for (final enemy in enemies) {
       if (!enemy.isMounted) continue;
-      final dist = position.distanceTo(enemy.position);
+      final dist = WorldConfig.wrappedDistance(position, enemy.position);
       if (dist < minDistance) {
         minDistance = dist;
         nearestEnemy = enemy;
@@ -146,7 +149,7 @@ class Player extends PositionComponent
       final enemies = game.world.children.whereType<Enemy>();
       for (final enemy in enemies) {
         if (!enemy.isMounted) continue;
-        final dist = position.distanceTo(enemy.position);
+        final dist = WorldConfig.wrappedDistance(position, enemy.position);
         if (dist < minDistance) {
           minDistance = dist;
           nearestEnemy = enemy;
@@ -154,7 +157,7 @@ class Player extends PositionComponent
       }
       
       if (nearestEnemy != null && minDistance < 400) { // Tầm đánh tự động là 400px
-        shootDir = (nearestEnemy.position - position).normalized();
+        shootDir = WorldConfig.wrappedDirection(position, nearestEnemy.position);
       } else {
         // Nếu không có quái gần đó, bắn theo hướng nhân vật đang nhìn
         shootDir = Vector2(scale.x > 0 ? 1 : -1, 0);
@@ -208,13 +211,36 @@ class Player extends PositionComponent
     }
   }
 
-  // void keepInBounds() {
-  //   // ❌ KHÔNG dùng hàm này: game.size là viewport size, không phải world size.
-  //   // Camera đã follow player, không cần giữ player trong viewport.
-  //   // Nếu muốn giới hạn world, cần dùng world bounds riêng.
-  //   if (position.x < 0) position.x = 0;
-  //   if (position.y < 0) position.y = 0;
-  //   if (position.x > game.size.x) position.x = game.size.x;
-  //   if (position.y > game.size.y) position.y = game.size.y;
-  // }
+  @override
+  void renderTree(Canvas canvas) {
+    // Render chính (bao gồm các child component)
+    super.renderTree(canvas);
+
+    // Ghost copies khi gần mép world
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save();
+      canvas.translate(WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save();
+      canvas.translate(-WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save();
+      canvas.translate(0, WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save();
+      canvas.translate(0, -WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+  }
 }

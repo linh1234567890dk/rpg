@@ -13,6 +13,7 @@ import 'components/target_lock_indicator.dart';
 import 'components/boss.dart';
 import 'components/ranged_enemy.dart';
 import 'components/location_name_popup.dart';
+import 'components/minimap.dart';
 import 'world/world_map.dart';
 import 'world/terrain_background.dart';
 
@@ -100,6 +101,11 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     locationPopup.priority = 1000;
     camera.viewport.add(locationPopup);
 
+    // Add minimap (HUD - trong viewport, góc phải trên)
+    final minimap = Minimap();
+    minimap.priority = 999;
+    camera.viewport.add(minimap);
+
     // Add components to World
     world.add(player);
     world.add(aimIndicator);
@@ -111,6 +117,9 @@ class RPGGame extends FlameGame with HasCollisionDetection {
 
     // Thêm thanh máu của người chơi lên HUD
     _setupPlayerHPBar();
+
+    // Spawn quái vật tại các bãi cố định
+    _spawnInitialEnemies();
     
     // Layout nút skill lần đầu
     _buttonsInitialized = true;
@@ -209,71 +218,58 @@ class RPGGame extends FlameGame with HasCollisionDetection {
         }
       },
     ));
-    // 5. Spawn quái vật định kỳ (Thêm vào world)
-    world.add(TimerComponent(
-      period: 3,
-      repeat: true,
-      onTick: _spawnEnemy,
-    ));
   }
-  void _spawnEnemy() {
-    // Nếu đạt 10 điểm và chưa có boss, spawn boss
-    if (score >= 10 && !bossSpawned) {
-      bossSpawned = true;
-      final boss = Boss(position: Vector2(size.x - 100, size.y / 2));
-      world.add(boss);
-      return;
-    }
 
-    // Spawn quái thường từ mọi hướng quanh Camera (vị trí người chơi)
+  void _spawnInitialEnemies() {
     final rnd = math.Random();
-    final cameraPos = camera.viewfinder.position;
-    final halfWidth = size.x / 2;
-    final halfHeight = size.y / 2;
-    Vector2 spawnPos = Vector2.zero();
-    
-    // Thử tối đa 5 lần để tìm vị trí không nằm trong safe zone
-    for (int attempt = 0; attempt < 5; attempt++) {
-      int side = rnd.nextInt(4); // 0: Trên, 1: Phải, 2: Dưới, 3: Trái
-      switch (side) {
-        case 0: // Trên
-          spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y - halfHeight - 50);
-          break;
-        case 1: // Phải
-          spawnPos = Vector2(cameraPos.x + halfWidth + 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
-          break;
-        case 2: // Dưới
-          spawnPos = Vector2(cameraPos.x + (rnd.nextDouble() - 0.5) * size.x, cameraPos.y + halfHeight + 50);
-          break;
-        case 3: // Trái
-        default:
-          spawnPos = Vector2(cameraPos.x - halfWidth - 50, cameraPos.y + (rnd.nextDouble() - 0.5) * size.y);
-          break;
+    for (final zone in WorldMap.zones) {
+      int count = (zone.radius * zone.spawnDensity / 70).clamp(3, 8).toInt();
+      for (int i = 0; i < count; i++) {
+        Vector2 spawnPos = Vector2.zero();
+        bool foundValidPos = false;
+        
+        for (int attempt = 0; attempt < 10; attempt++) {
+          final angle = rnd.nextDouble() * 2 * math.pi;
+          final r = rnd.nextDouble() * zone.radius;
+          spawnPos = Vector2(
+            zone.centerX + r * math.cos(angle),
+            zone.centerY + r * math.sin(angle),
+          );
+          if (!WorldMap.isInSafeZone(spawnPos)) {
+            foundValidPos = true;
+            break;
+          }
+        }
+        
+        if (!foundValidPos) continue;
+
+        final level = rnd.nextInt(zone.maxLevel - zone.minLevel + 1) + zone.minLevel;
+        final isRanged = zone.enemyTypes.contains('ranged') && rnd.nextDouble() < 0.4;
+        
+        if (isRanged) {
+          world.add(RangedEnemy(position: spawnPos, level: level)..spawnPosition = spawnPos.clone());
+        } else {
+          world.add(Enemy(position: spawnPos, level: level)..spawnPosition = spawnPos.clone());
+        }
       }
-      // Nếu không trong safe zone thì dùng luôn
-      if (!WorldMap.isInSafeZone(spawnPos)) break;
     }
 
-    // Xác định level quái dựa trên zone player đang đứng
-    final playerZone = WorldMap.zoneAt(player.position);
-    int enemyLevel;
-    bool allowRanged;
+    // Spawn Boss tại Núi Lửa Tử Thần (4000, 1500)
+    world.add(Boss(position: Vector2(4000, 1500))..spawnPosition = Vector2(4000, 1500));
+  }
 
-    if (playerZone != null) {
-      enemyLevel = rnd.nextInt(playerZone.maxLevel - playerZone.minLevel + 1) + playerZone.minLevel;
-      allowRanged = playerZone.enemyTypes.contains('ranged');
-    } else {
-      // Fallback: nếu không ở zone nào, level = 1
-      enemyLevel = 1;
-      allowRanged = false;
-    }
-
-    // Spawn theo config zone
-    if (allowRanged && rnd.nextDouble() < 0.4) {
-      world.add(RangedEnemy(position: spawnPos, level: enemyLevel));
-    } else {
-      world.add(Enemy(position: spawnPos, level: enemyLevel));
-    }
+  void scheduleEnemyRespawn(Vector2 spawnPos, int level, bool isRanged) {
+    world.add(TimerComponent(
+      period: 10,
+      repeat: false,
+      onTick: () {
+        if (isRanged) {
+          world.add(RangedEnemy(position: spawnPos.clone(), level: level)..spawnPosition = spawnPos.clone());
+        } else {
+          world.add(Enemy(position: spawnPos.clone(), level: level)..spawnPosition = spawnPos.clone());
+        }
+      },
+    ));
   }
 
   void shake({double intensity = 5, double duration = 0.2}) {
@@ -371,6 +367,11 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     final locationPopup = LocationNamePopup();
     locationPopup.priority = 1000;
     camera.viewport.add(locationPopup);
+
+    // Re-add minimap
+    final minimap = Minimap();
+    minimap.priority = 999;
+    camera.viewport.add(minimap);
 
     // Re-add HUD controls
     camera.viewport.add(joystick);

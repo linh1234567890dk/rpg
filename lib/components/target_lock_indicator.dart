@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
+import 'package:rpg/utils/world_config.dart';
 
 class TargetLockIndicator extends SpriteAnimationComponent with HasGameReference {
   TargetLockIndicator() : super(size: Vector2.all(50), anchor: Anchor.center);
@@ -31,8 +32,23 @@ class TargetLockIndicator extends SpriteAnimationComponent with HasGameReference
   }
 
   @override
-  void render(Canvas canvas) {
+  void renderTree(Canvas canvas) {
     if (!isVisible) return;
-    super.render(canvas);
+    super.renderTree(canvas);
+
+    // Ghost copies khi gần mép world
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save(); canvas.translate(WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save(); canvas.translate(-WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save(); canvas.translate(0, WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save(); canvas.translate(0, -WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
+    }
   }
 }

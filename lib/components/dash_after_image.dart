@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
+import '../utils/world_config.dart';
 
 class DashAfterImage extends RectangleComponent {
   DashAfterImage({
@@ -26,5 +27,29 @@ class DashAfterImage extends RectangleComponent {
       Vector2.all(0.8),
       EffectController(duration: 0.3),
     ));
+  }
+
+  @override
+  void update(double dt) {
+    position = WorldConfig.wrapPosition(position);
+    super.update(dt);
+  }
+
+  @override
+  void renderTree(Canvas canvas) {
+    super.renderTree(canvas);
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save(); canvas.translate(WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save(); canvas.translate(-WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save(); canvas.translate(0, WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save(); canvas.translate(0, -WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
+    }
   }
 }

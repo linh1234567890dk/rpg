@@ -11,6 +11,8 @@ class Boss extends Enemy {
   Boss({required super.position, super.level}) {
     size = Vector2.all(100); // Boss to gấp đôi quái thường
     hp = 500;
+    detectionRange = 300.0;
+    tetherRange = 600.0;
   }
 
   @override

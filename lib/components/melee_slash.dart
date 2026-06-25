@@ -2,6 +2,7 @@ import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'enemy.dart';
+import '../utils/world_config.dart';
 
 class MeleeSlash extends PositionComponent
     with HasGameReference, CollisionCallbacks {
@@ -36,9 +37,28 @@ class MeleeSlash extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
+    position = WorldConfig.wrapPosition(position);
     timer += dt;
     if (timer >= lifeTime) {
       removeFromParent();
+    }
+  }
+
+  @override
+  void renderTree(Canvas canvas) {
+    super.renderTree(canvas);
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save(); canvas.translate(WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save(); canvas.translate(-WorldConfig.worldWidth, 0); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save(); canvas.translate(0, WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save(); canvas.translate(0, -WorldConfig.worldHeight); super.renderTree(canvas); canvas.restore();
     }
   }
 

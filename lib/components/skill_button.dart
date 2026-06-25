@@ -114,6 +114,7 @@ class SkillButton extends PositionComponent
 
   @override
   void onDragUpdate(DragUpdateEvent event) {
+    if (!isReady || !_isDragging) return;
     super.onDragUpdate(event);
     // Trong Flame 1.x, localPosition là vị trí ngón tay so với góc trên bên trái của nút
     // Chúng ta tính delta từ tâm của nút (size / 2)

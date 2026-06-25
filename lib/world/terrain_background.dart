@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../rpg_game.dart';
+import '../utils/world_config.dart';
 import 'world_map.dart';
 import 'location.dart';
 
@@ -10,78 +11,77 @@ class TerrainBackground extends PositionComponent with HasGameReference<RPGGame>
 
   @override
   void render(Canvas canvas) {
-    try {
-      final game = this.game;
+    final game = this.game;
+    final cameraPos = game.camera.viewfinder.position;
+    final vpSize = game.size;
+    final padding = 200.0;
 
-      final cameraPos = game.camera.viewfinder.position;
-      final vpSize = game.size;
-      final padding = 200.0;
-      final viewLeft = cameraPos.x - vpSize.x / 2 - padding;
-      final viewRight = cameraPos.x + vpSize.x / 2 + padding;
-      final viewTop = cameraPos.y - vpSize.y / 2 - padding;
-      final viewBottom = cameraPos.y + vpSize.y / 2 + padding;
+    // Tính viewport thực (có thể tràn ra ngoài world bounds)
+    final viewLeft = cameraPos.x - vpSize.x / 2 - padding;
+    final viewRight = cameraPos.x + vpSize.x / 2 + padding;
+    final viewTop = cameraPos.y - vpSize.y / 2 - padding;
+    final viewBottom = cameraPos.y + vpSize.y / 2 + padding;
+    final fullViewport = Rect.fromLTRB(viewLeft, viewTop, viewRight, viewBottom);
 
-      // Giới hạn trong world bounds
-      final clipLeft = viewLeft.clamp(0.0, WorldMap.worldWidth);
-      final clipTop = viewTop.clamp(0.0, WorldMap.worldHeight);
-      final clipRight = viewRight.clamp(0.0, WorldMap.worldWidth);
-      final clipBottom = viewBottom.clamp(0.0, WorldMap.worldHeight);
-      final clipRect = Rect.fromLTRB(clipLeft, clipTop, clipRight, clipBottom);
+    // Vẽ viewport chính (không offset)
+    _renderViewport(canvas, fullViewport);
 
-      if (clipRect.isEmpty) return;
+    // Lấy danh sách offset cần render thêm
+    final offsets = WorldConfig.getWrappedOffsets(fullViewport);
+    for (final offset in offsets) {
+      final shiftedVp = fullViewport.shift(Offset(offset.x, offset.y));
+      canvas.save();
+      canvas.translate(-offset.x, -offset.y);
+      _renderViewport(canvas, shiftedVp);
+      canvas.restore();
+    }
+  }
 
-      final paint = Paint();
+  void _renderViewport(Canvas canvas, Rect vp) {
+    // Giới hạn vp trong world bounds
+    final clipLeft = vp.left.clamp(0.0, WorldMap.worldWidth);
+    final clipTop = vp.top.clamp(0.0, WorldMap.worldHeight);
+    final clipRight = vp.right.clamp(0.0, WorldMap.worldWidth);
+    final clipBottom = vp.bottom.clamp(0.0, WorldMap.worldHeight);
+    final clipRect = Rect.fromLTRB(clipLeft, clipTop, clipRight, clipBottom);
+    if (clipRect.isEmpty) return;
 
-      // Vẽ nền tổng thể
-      paint.color = const Color(0xFF2D5A27);
-      canvas.drawRect(clipRect, paint);
+    final paint = Paint();
 
-      // Vẽ các vùng quái — chỉ vẽ nếu giao với viewport
-      for (final zone in WorldMap.zones) {
-        final zoneRect = Rect.fromCircle(
-          center: Offset(zone.centerX, zone.centerY),
-          radius: zone.radius,
-        );
-        if (!zoneRect.overlaps(clipRect)) continue;
+    // Nền tổng thể
+    paint.color = const Color(0xFF2D5A27);
+    canvas.drawRect(clipRect, paint);
 
-        paint.color = _zoneColor(zone.name);
-        canvas.drawCircle(
-          Offset(zone.centerX, zone.centerY),
-          zone.radius,
-          paint,
-        );
-      }
+    // Các zone
+    for (final zone in WorldMap.zones) {
+      final zoneRect = Rect.fromCircle(
+        center: Offset(zone.centerX, zone.centerY),
+        radius: zone.radius,
+      );
+      if (!zoneRect.overlaps(clipRect)) continue;
 
-      // Vẽ vùng an toàn cho các location
-      for (final loc in WorldMap.locations) {
-        final locRect = Rect.fromCircle(
-          center: Offset(loc.center.x, loc.center.y),
-          radius: loc.radius,
-        );
-        if (!locRect.overlaps(clipRect)) continue;
+      paint.color = _zoneColor(zone.name);
+      canvas.drawCircle(Offset(zone.centerX, zone.centerY), zone.radius, paint);
+    }
 
-        paint.color = const Color(0xFF4A7C3F).withAlpha(100);
-        canvas.drawCircle(
-          Offset(loc.center.x, loc.center.y),
-          loc.radius,
-          paint,
-        );
+    // Các location
+    for (final loc in WorldMap.locations) {
+      final locRect = Rect.fromCircle(
+        center: Offset(loc.center.x, loc.center.y),
+        radius: loc.radius,
+      );
+      if (!locRect.overlaps(clipRect)) continue;
 
-        paint.color = Colors.white.withAlpha(80);
-        paint.style = PaintingStyle.stroke;
-        paint.strokeWidth = 2;
-        canvas.drawCircle(
-          Offset(loc.center.x, loc.center.y),
-          loc.radius,
-          paint,
-        );
-        paint.style = PaintingStyle.fill;
+      paint.color = const Color(0xFF4A7C3F).withAlpha(100);
+      canvas.drawCircle(Offset(loc.center.x, loc.center.y), loc.radius, paint);
 
-        _drawLocationIcon(canvas, loc);
-      }
-    } catch (e, stack) {
-      print('Error in TerrainBackground.render: $e');
-      print(stack);
+      paint.color = Colors.white.withAlpha(80);
+      paint.style = PaintingStyle.stroke;
+      paint.strokeWidth = 2;
+      canvas.drawCircle(Offset(loc.center.x, loc.center.y), loc.radius, paint);
+      paint.style = PaintingStyle.fill;
+
+      _drawLocationIcon(canvas, loc);
     }
   }
 

@@ -3,6 +3,15 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'enemy_attack_effect.dart';
 import '../rpg_game.dart';
+import '../utils/world_config.dart';
+import 'boss.dart';
+import 'ranged_enemy.dart';
+
+enum EnemyState {
+  idle,
+  chasing,
+  returning,
+}
 
 class Enemy extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
@@ -25,6 +34,12 @@ class Enemy extends PositionComponent
   late final RectangleComponent hpBar;
   late final RectangleComponent ghostHpBar;
 
+  // Điểm spawn gốc và hành vi RPG
+  Vector2? spawnPosition;
+  double detectionRange = 180.0;
+  double tetherRange = 400.0;
+  EnemyState state = EnemyState.idle;
+
   /// Màu sắc gốc — subclass có thể override
   Color get baseColor => Colors.red;
   /// Màu khi trúng đòn — subclass có thể override
@@ -32,6 +47,7 @@ class Enemy extends PositionComponent
 
   Enemy({required Vector2 position, Vector2? size, this.level = 1})
     : super(position: position, size: size ?? Vector2.all(40), anchor: Anchor.center) {
+    spawnPosition = position.clone();
     _applyLevelScaling();
   }
 
@@ -74,14 +90,17 @@ class Enemy extends PositionComponent
     super.update(dt);
 
     final player = game.player;
-    final distance = position.distanceTo(player.position);
+    final currentSpawnPos = spawnPosition ?? position;
+    final distToPlayer = WorldConfig.wrappedDistance(position, player.position);
+    final distToSpawn = WorldConfig.wrappedDistance(position, currentSpawnPos);
 
     // Xử lý Stun & Knockback
-    if (stunTimer > 0) {
+    if (stunTimer > 0 && state != EnemyState.returning) {
       stunTimer -= dt;
       // Di chuyển theo lực đẩy lùi (giảm dần theo thời gian)
       position.add(knockbackVelocity * dt);
       knockbackVelocity *= 0.9; // Ma sát làm chậm lực đẩy
+      position = WorldConfig.wrapPosition(position);
       return; // Không làm gì khác khi bị choáng
     }
 
@@ -89,19 +108,49 @@ class Enemy extends PositionComponent
       remainingAttackCooldown -= dt;
     }
 
-    if (distance > attackRange) {
-      // Nếu ở xa, đuổi theo người chơi
-      final direction = (player.position - position).normalized();
-      position.add(direction * speed * dt);
-    } else {
-      // Nếu đủ gần trong phạm vi tấn công, dừng lại và đánh
-      if (remainingAttackCooldown <= 0) {
-        performAttack();
+    // AI Logic theo State
+    if (state == EnemyState.idle) {
+      if (distToPlayer <= detectionRange) {
+        state = EnemyState.chasing;
+      } else if (distToSpawn > 10) {
+        // Quay lại điểm spawn nếu bị trôi đi chỗ khác
+        final direction = WorldConfig.wrappedDirection(position, currentSpawnPos);
+        position.add(direction * speed * dt);
       }
-      // Khi đang trong cooldown, enemy đứng yên để người chơi có cơ hội né
-      // Với RangedEnemy: lùi lại để giữ khoảng cách
-      handleInRange(dt, distance);
+    } else if (state == EnemyState.chasing) {
+      if (distToSpawn > tetherRange) {
+        state = EnemyState.returning;
+      } else {
+        if (distToPlayer > attackRange) {
+          // Nếu ở xa, đuổi theo người chơi (có tính wrapping)
+          final direction = WorldConfig.wrappedDirection(position, player.position);
+          position.add(direction * speed * dt);
+        } else {
+          // Nếu đủ gần trong phạm vi tấn công, dừng lại và đánh
+          if (remainingAttackCooldown <= 0) {
+            performAttack();
+          }
+          // Khi đang trong cooldown, enemy đứng yên để người chơi có cơ hội né
+          // Với RangedEnemy: lùi lại để giữ khoảng cách
+          handleInRange(dt, distToPlayer);
+        }
+      }
+    } else if (state == EnemyState.returning) {
+      // Hồi máu dần khi đang chạy về
+      hp = (hp + maxHp * 0.2 * dt).clamp(0.0, maxHp);
+      
+      if (distToSpawn > 10) {
+        final direction = WorldConfig.wrappedDirection(position, currentSpawnPos);
+        position.add(direction * speed * 1.5 * dt); // Di chuyển nhanh hơn khi về nhà
+      } else {
+        position.setFrom(currentSpawnPos);
+        hp = maxHp;
+        state = EnemyState.idle;
+      }
     }
+
+    // Wrap position
+    position = WorldConfig.wrapPosition(position);
 
     // Y-sorting
     priority = position.y.toInt();
@@ -123,6 +172,9 @@ class Enemy extends PositionComponent
 
     if (hp <= 0) {
       game.addScore(1);
+      if (this is! Boss) {
+        game.scheduleEnemyRespawn(currentSpawnPos, level, this is RangedEnemy);
+      }
       removeFromParent();
     }
   }
@@ -130,14 +182,13 @@ class Enemy extends PositionComponent
   void performAttack() {
     remainingAttackCooldown = attackCooldown;
 
-    // Hướng tấn công tới người chơi
-    final diff = game.player.position - position;
-    final dir = diff.normalized();
+    // Hướng tấn công tới người chơi (có tính wrapping)
+    final dir = WorldConfig.wrappedDirection(position, game.player.position);
     
     // Quay mặt về phía người chơi khi đánh
-    if (diff.x < 0 && scale.x > 0) {
+    if (dir.x < 0 && scale.x > 0) {
       flipHorizontallyAroundCenter();
-    } else if (diff.x > 0 && scale.x < 0) {
+    } else if (dir.x > 0 && scale.x < 0) {
       flipHorizontallyAroundCenter();
     }
 
@@ -155,12 +206,46 @@ class Enemy extends PositionComponent
     });
   }
 
+  @override
+  void renderTree(Canvas canvas) {
+    super.renderTree(canvas);
+
+    // Ghost copies khi gần mép
+    final threshold = 600.0;
+    if (position.x < threshold) {
+      canvas.save();
+      canvas.translate(WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.x > WorldConfig.worldWidth - threshold) {
+      canvas.save();
+      canvas.translate(-WorldConfig.worldWidth, 0);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y < threshold) {
+      canvas.save();
+      canvas.translate(0, WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+    if (position.y > WorldConfig.worldHeight - threshold) {
+      canvas.save();
+      canvas.translate(0, -WorldConfig.worldHeight);
+      super.renderTree(canvas);
+      canvas.restore();
+    }
+  }
+
   /// Hook cho subclass xử lý khi enemy đang trong phạm vi tấn công (giữa các đòn)
   void handleInRange(double dt, double distance) {
     // Mặc định không làm gì — enemy thường đứng yên
   }
 
   void takeDamage(double damage, {Vector2? knockbackDirection}) {
+    if (state == EnemyState.returning) return; // Không thể tấn công khi quái đang chạy về
+    
     hp -= damage;
     game.shake(intensity: 2); // Rung nhẹ khi quái trúng đòn
     game.showHitEffect(position.clone(), Colors.orange); // Hiệu ứng tia lửa
