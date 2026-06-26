@@ -9,6 +9,7 @@ import 'dash_after_image.dart';
 
 import '../rpg_game.dart';
 import '../utils/world_config.dart';
+import '../utils/skill_config.dart';
 import '../world/world_map.dart';
 
 class Player extends PositionComponent
@@ -17,9 +18,12 @@ class Player extends PositionComponent
   final double speed = 200.0;
 
   double hp = 100.0;
-  final double maxHp = 100.0;
+  double maxHp = 100.0;
   int level = 1;
   double xp = 0;
+  double get maxXp => level * 100.0; // Mỗi level cần lượng EXP tăng dần
+  double baseAttackDamage = 20.0;
+  double attackDamage = 20.0;
 
   // Knockback & Stun
   double stunTimer = 0;
@@ -135,14 +139,22 @@ class Player extends PositionComponent
     }
   }
 
-  void attack(Vector2? direction, {bool isMelee = false}) {
+  /// Sử dụng skill với kỹ năng được xác định bởi [skillData]
+  void useSkill(Vector2? direction, SkillData skillData) {
+    // Tính sát thương dựa trên stats hiện tại
+    final damage = skillData.calculateDamage(
+      attackDamage: attackDamage,
+      maxHp: maxHp,
+      currentHp: hp,
+      speed: speed,
+    );
+
     Vector2 shootDir;
     
     if (direction != null) {
-      // Nếu người chơi kéo để định hướng (Manual Aim)
       shootDir = direction;
     } else {
-      // Tự định hướng (Auto Aim): Tìm kẻ địch gần nhất trong world
+      // Auto Aim: Tìm kẻ địch gần nhất
       Enemy? nearestEnemy;
       double minDistance = double.infinity;
       
@@ -156,21 +168,35 @@ class Player extends PositionComponent
         }
       }
       
-      if (nearestEnemy != null && minDistance < 400) { // Tầm đánh tự động là 400px
+      if (nearestEnemy != null && minDistance < 400) {
         shootDir = WorldConfig.wrappedDirection(position, nearestEnemy.position);
       } else {
-        // Nếu không có quái gần đó, bắn theo hướng nhân vật đang nhìn
         shootDir = Vector2(scale.x > 0 ? 1 : -1, 0);
       }
     }
+
+    if (!skillData.isDamaging) {
+      // Skill không gây sát thương (ví dụ: Dash xử lý riêng trong game._handleSkill)
+      return;
+    }
     
-    if (isMelee) {
-      game.world.add(MeleeSlash(position: position.clone(), direction: shootDir));
-      // Rung nhẹ khi chém
+    if (skillData.isMelee) {
+      game.world.add(MeleeSlash(position: position.clone(), direction: shootDir, damage: damage));
       game.shake(intensity: 1);
     } else {
-      game.world.add(Bullet(position: position.clone(), direction: shootDir));
+      game.world.add(Bullet(position: position.clone(), direction: shootDir, damage: damage));
     }
+  }
+
+  /// Giữ lại attack cũ cho tương thích, nhưng delegate qua useSkill
+  void attack(Vector2? direction, {bool isMelee = false}) {
+    final skillData = isMelee
+        ? SkillDatabase.getSkill(SkillType.normal)
+        : SkillDatabase.skills.firstWhere(
+            (s) => s.isDamaging && !s.isMelee,
+            orElse: () => SkillDatabase.getSkill(SkillType.normal),
+          );
+    useSkill(direction, skillData);
   }
 
   void dash(Vector2 direction) {
@@ -181,6 +207,23 @@ class Player extends PositionComponent
     // Hiệu ứng màu xanh nhạt khi lướt
     body.paint.color = Colors.cyan.withAlpha(200);
     game.shake(intensity: 2);
+  }
+
+  void addXP(double amount) {
+    xp += amount;
+    while (xp >= maxXp) {
+      xp -= maxXp;
+      levelUp();
+    }
+  }
+
+  void levelUp() {
+    level++;
+    maxHp += 20;
+    hp = maxHp; // Hồi đầy máu khi lên level
+    baseAttackDamage += 5;
+    attackDamage = baseAttackDamage;
+    game.showLevelUpEffect();
   }
 
   void takeDamage(double damage, {Vector2? knockbackDirection}) {

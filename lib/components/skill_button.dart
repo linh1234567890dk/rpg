@@ -3,8 +3,7 @@ import 'package:flame/events.dart';
 import 'package:flame/palette.dart';
 import 'package:flutter/material.dart';
 import '../rpg_game.dart';
-
-enum SkillType { normal, special, dash }
+import '../utils/skill_config.dart';
 
 class SkillButton extends PositionComponent 
     with TapCallbacks, DragCallbacks, HasGameReference<RPGGame> {

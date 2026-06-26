@@ -40,6 +40,9 @@ class Enemy extends PositionComponent
   double tetherRange = 400.0;
   EnemyState state = EnemyState.idle;
 
+  /// EXP thưởng khi tiêu diệt enemy
+  double get xpReward => 20.0 + level * 10.0;
+
   /// Màu sắc gốc — subclass có thể override
   Color get baseColor => Colors.red;
   /// Màu khi trúng đòn — subclass có thể override
@@ -172,6 +175,7 @@ class Enemy extends PositionComponent
 
     if (hp <= 0) {
       game.addScore(1);
+      game.player.addXP(xpReward);
       if (this is! Boss) {
         game.scheduleEnemyRespawn(currentSpawnPos, level, this is RangedEnemy);
       }

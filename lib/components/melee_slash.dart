@@ -7,10 +7,11 @@ import '../utils/world_config.dart';
 class MeleeSlash extends PositionComponent
     with HasGameReference, CollisionCallbacks {
   final Vector2 direction;
+  final double damage;
   double lifeTime = 0.2; // Hiệu ứng biến mất rất nhanh
   double timer = 0;
 
-  MeleeSlash({required Vector2 position, required this.direction})
+  MeleeSlash({required Vector2 position, required this.direction, this.damage = 30.0})
     : super(
         position: position,
         size: Vector2(60, 80),
@@ -69,7 +70,7 @@ class MeleeSlash extends PositionComponent
   ) {
     super.onCollisionStart(intersectionPoints, other);
     if (other is Enemy) {
-      other.takeDamage(30, knockbackDirection: direction); // Sát thương cận chiến thường cao hơn bắn xa
+      other.takeDamage(damage, knockbackDirection: direction);
     }
   }
 }

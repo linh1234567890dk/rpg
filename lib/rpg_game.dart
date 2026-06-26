@@ -5,6 +5,7 @@ import 'package:flame/palette.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
+import 'utils/skill_config.dart';
 import 'components/player.dart';
 import 'components/enemy.dart';
 import 'components/skill_button.dart';
@@ -115,8 +116,8 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     camera.viewfinder.anchor = Anchor.center;
     camera.follow(player);
 
-    // Thêm thanh máu của người chơi lên HUD
-    _setupPlayerHPBar();
+    // Thêm HUD (thanh máu, level, XP)
+    _setupPlayerHUD();
 
     // Spawn quái vật tại các bãi cố định
     _spawnInitialEnemies();
@@ -169,7 +170,8 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     _layoutButtons();
   }
 
-  void _setupPlayerHPBar() {
+  void _setupPlayerHUD() {
+    // === HP BAR ===
     final hpBg = RectangleComponent(
       size: Vector2(200, 20),
       position: Vector2(20, 20),
@@ -192,16 +194,47 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     hpBg.add(hpFill);      // Thanh xanh nằm trên
     camera.viewport.add(hpBg);
 
-    // Cập nhật thanh máu liên tục
+    // === LEVEL TEXT ===
+    final levelText = TextComponent(
+      text: 'Lv.1',
+      position: Vector2(20, 2),
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: Colors.yellow,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'monospace',
+          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
+        ),
+      ),
+    );
+    camera.viewport.add(levelText);
+
+    // === XP BAR (nằm dưới thanh máu) ===
+    final xpBg = RectangleComponent(
+      size: Vector2(200, 8),
+      position: Vector2(20, 44),
+      paint: Paint()..color = Colors.black.withAlpha(100),
+    );
+    
+    final xpFill = RectangleComponent(
+      size: Vector2(0, 8),
+      position: Vector2(0, 0),
+      paint: Paint()..color = Colors.cyan,
+    );
+    
+    xpBg.add(xpFill);
+    camera.viewport.add(xpBg);
+
+    // Cập nhật HUD liên tục
     hpFill.add(TimerComponent(
-      period: 0.05, // Cập nhật nhanh hơn để mượt
+      period: 0.05,
       repeat: true,
       onTick: () {
         final dt = 0.05;
-        // Tụt ngay lập tức
+        // Cập nhật HP
         hpFill.width = (player.hp / player.maxHp) * 200;
         
-        // Ghost HP co lại từ từ
         if (ghostHpFill.width > hpFill.width) {
           ghostHpFill.width -= 100 * dt; 
           if (ghostHpFill.width < hpFill.width) {
@@ -216,6 +249,12 @@ class RPGGame extends FlameGame with HasCollisionDetection {
         } else {
           hpFill.paint.color = Colors.green;
         }
+
+        // Cập nhật Level text
+        levelText.text = 'Lv.${player.level}';
+
+        // Cập nhật XP bar
+        xpFill.width = (player.xp / player.maxXp) * 200;
       },
     ));
   }
@@ -294,6 +333,16 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     }
   }
 
+  void showLevelUpEffect() {
+    // Hiệu ứng nổ màu vàng khi lên level
+    showHitEffect(player.position.clone(), Colors.yellow);
+    showHitEffect(player.position.clone(), Colors.cyan);
+    showHitEffect(player.position.clone(), Colors.green);
+
+    // Rung màn hình mạnh
+    shake(intensity: 8, duration: 0.3);
+  }
+
   void showHitEffect(Vector2 position, Color color) {
     world.add(
       ParticleSystemComponent(
@@ -328,13 +377,14 @@ class RPGGame extends FlameGame with HasCollisionDetection {
   }
 
   void _handleSkill(SkillType type, Vector2? direction) {
+    final skillData = SkillDatabase.getSkill(type);
+    
     if (type == SkillType.dash) {
       if (direction != null) {
         player.dash(direction);
       }
     } else {
-      final isMelee = type == SkillType.normal;
-      player.attack(direction, isMelee: isMelee);
+      player.useSkill(direction, skillData);
     }
   }
 
@@ -379,8 +429,8 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     camera.viewport.add(skillButton!);
     camera.viewport.add(dashButton!);
 
-    // Re-add HP bar
-    _setupPlayerHPBar();
+    // Re-add HUD (HP bar, level, XP)
+    _setupPlayerHUD();
     
     // Layout nút skill
     _layoutButtons();
