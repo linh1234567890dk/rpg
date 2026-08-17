@@ -9,9 +9,9 @@ class SkillButton extends PositionComponent
     with TapCallbacks, DragCallbacks, HasGameReference<RPGGame> {
   
   final SkillType type;
+  final SkillData skillData; // Cấu hình data-driven (label, cooldown, color...)
   final VoidCallback? onAction;
   final Function(Vector2 direction)? onAimAction;
-  final double cooldown; // Thời gian hồi chiêu (giây)
 
   double _remainingCooldown = 0;
   bool _isDragging = false;
@@ -25,10 +25,13 @@ class SkillButton extends PositionComponent
   SkillButton({
     required this.type,
     required Vector2 position,
-    this.cooldown = 0.5, // Mặc định 0.5s cho đòn thường
     this.onAction,
     this.onAimAction,
-  }) : super(position: position, size: Vector2.all(80), anchor: Anchor.center);
+  })  : skillData = SkillDatabase.getSkill(type),
+        super(position: position, size: Vector2.all(80), anchor: Anchor.center);
+
+  /// Thời gian hồi chiêu — lấy từ data-driven
+  double get cooldown => skillData.cooldown;
 
   @override
   Future<void> onLoad() async {
@@ -46,12 +49,8 @@ class SkillButton extends PositionComponent
     _cooldownOverlay.scale = Vector2.zero(); // Mặc định ẩn đi
     add(_cooldownOverlay);
 
-    String labelText = 'ATK';
-    if (type == SkillType.special) labelText = 'SKILL';
-    if (type == SkillType.dash) labelText = 'DASH';
-
     _label = TextComponent(
-      text: labelText,
+      text: skillData.label, // Lấy từ data-driven
       textRenderer: TextPaint(
         style: const TextStyle(
           color: Colors.white,

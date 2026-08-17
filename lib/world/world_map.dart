@@ -11,7 +11,7 @@ class ZoneConfig {
   final int minLevel; // Cấp độ quái tối thiểu
   final int maxLevel; // Cấp độ quái tối đa
   final double spawnDensity; // 0.0 - 1.0, mật độ spawn
-  final List<String> enemyTypes; // Loại quái sẽ spawn
+  final List<String> enemyIds; // Danh sách id enemy sẽ spawn (tra cứu EnemyDatabase)
 
   const ZoneConfig({
     required this.name,
@@ -21,7 +21,7 @@ class ZoneConfig {
     required this.minLevel,
     required this.maxLevel,
     required this.spawnDensity,
-    required this.enemyTypes,
+    required this.enemyIds,
   });
 
   bool contains(Vector2 pos) {
@@ -76,7 +76,7 @@ class WorldMap {
 
   /// Các vùng quái theo khu vực
   static final List<ZoneConfig> zones = [
-    // Vùng quái gần làng (dễ) - xung quanh Làng Ánh Dương
+    // Vùng quái quanh làng (dễ) - đồng cỏ quanh Làng Ánh Dương
     ZoneConfig(
       name: 'Đồng cỏ Ánh Dương',
       centerX: 2000,
@@ -85,9 +85,9 @@ class WorldMap {
       minLevel: 1,
       maxLevel: 3,
       spawnDensity: 0.3,
-      enemyTypes: ['melee'],
+      enemyIds: ['slime'],
     ),
-    // Vùng quái gần làng (dễ) - xung quanh Làng Nguyệt Quế
+    // Vùng quái quanh làng (dễ) - rừng quanh Làng Nguyệt Quế
     ZoneConfig(
       name: 'Rừng Nguyệt Quế',
       centerX: 8000,
@@ -96,9 +96,9 @@ class WorldMap {
       minLevel: 1,
       maxLevel: 3,
       spawnDensity: 0.3,
-      enemyTypes: ['melee'],
+      enemyIds: ['slime'],
     ),
-    // Vùng quái gần làng (dễ) - xung quanh Làng Sao Băng
+    // Vùng quái quanh làng (dễ) - đồng quanh Làng Sao Băng
     ZoneConfig(
       name: 'Cánh Đồng Sao',
       centerX: 14000,
@@ -107,7 +107,7 @@ class WorldMap {
       minLevel: 1,
       maxLevel: 3,
       spawnDensity: 0.3,
-      enemyTypes: ['melee'],
+      enemyIds: ['slime'],
     ),
     // Vùng rừng rậm (trung bình) - giữa các làng
     ZoneConfig(
@@ -118,7 +118,7 @@ class WorldMap {
       minLevel: 3,
       maxLevel: 6,
       spawnDensity: 0.5,
-      enemyTypes: ['melee', 'ranged'],
+      enemyIds: ['slime', 'wolf', 'wisp'],
     ),
     ZoneConfig(
       name: 'Rừng Tối Đông Bắc',
@@ -128,7 +128,7 @@ class WorldMap {
       minLevel: 3,
       maxLevel: 6,
       spawnDensity: 0.5,
-      enemyTypes: ['melee', 'ranged'],
+      enemyIds: ['slime', 'wolf', 'wisp'],
     ),
     // Vùng sa mạc (khó) - phía Nam & xa
     ZoneConfig(
@@ -139,7 +139,7 @@ class WorldMap {
       minLevel: 5,
       maxLevel: 8,
       spawnDensity: 0.7,
-      enemyTypes: ['melee', 'ranged'],
+      enemyIds: ['slime', 'wolf', 'golem', 'wisp'],
     ),
     // Vùng núi lửa (rất khó) - xa nhất
     ZoneConfig(
@@ -150,7 +150,7 @@ class WorldMap {
       minLevel: 7,
       maxLevel: 10,
       spawnDensity: 0.9,
-      enemyTypes: ['melee', 'ranged'],
+      enemyIds: ['slime', 'wolf', 'golem', 'wisp', 'imp'],
     ),
   ];
 

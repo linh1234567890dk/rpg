@@ -16,6 +16,7 @@ class Player extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
   final JoystickComponent joystick;
   final double speed = 200.0;
+  final String path;
 
   double hp = 100.0;
   double maxHp = 100.0;
@@ -39,16 +40,41 @@ class Player extends PositionComponent
 
   late final RectangleComponent body;
 
-  Player({required this.joystick})
+  Player({required this.joystick, this.path = '🧙'})
     : super(size: Vector2.all(50), anchor: Anchor.center);
 
   @override
   Future<void> onLoad() async {
     // Thêm va chạm cho người chơi
     add(RectangleHitbox());
-    // Sử dụng một hình vuông màu trắng đại diện cho nhân vật
-    body = RectangleComponent(size: size, paint: BasicPalette.white.paint());
+    // Sử dụng một hình vuông màu trắng mờ làm nền đại diện cho nhân vật
+    body = RectangleComponent(
+      size: size,
+      paint: Paint()..color = Colors.white.withAlpha(40),
+    );
     add(body);
+
+    if (path.contains('.') || path.contains('/')) {
+      final sprite = await game.loadSprite(path);
+      body.add(SpriteComponent(
+        sprite: sprite,
+        size: size,
+        anchor: Anchor.center,
+        position: size / 2,
+      ));
+    } else {
+      body.add(TextComponent(
+        text: path,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            fontSize: size.x * 0.7,
+            fontFamily: 'Arial',
+          ),
+        ),
+        anchor: Anchor.center,
+        position: size / 2,
+      ));
+    }
 
     // Đặt vị trí ban đầu gần Làng Ánh Dương (2000, 2000)
     position = Vector2(2000, 2000);
@@ -75,7 +101,7 @@ class Player extends PositionComponent
       
       if (dashTimer <= 0) {
         isDashing = false;
-        body.paint.color = Colors.white;
+        body.paint.color = Colors.white.withAlpha(40);
       }
       return; // Không nhận input di chuyển khác khi đang lướt
     }
@@ -245,7 +271,7 @@ class Player extends PositionComponent
     body.paint.color = Colors.red;
     Future.delayed(const Duration(milliseconds: 100), () {
       if (!isMounted) return;
-      body.paint.color = Colors.white;
+      body.paint.color = Colors.white.withAlpha(40);
     });
 
     if (hp <= 0) {

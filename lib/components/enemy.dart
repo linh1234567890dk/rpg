@@ -1,11 +1,13 @@
+import 'dart:math' as math;
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'enemy_attack_effect.dart';
+import 'bullet.dart';
 import '../rpg_game.dart';
 import '../utils/world_config.dart';
-import 'boss.dart';
-import 'ranged_enemy.dart';
+import '../utils/enemy_config.dart';
+import '../utils/attack_style.dart';
 
 enum EnemyState {
   idle,
@@ -13,22 +15,38 @@ enum EnemyState {
   returning,
 }
 
+/// Enemy duy nhất — mọi hành vi (cận chiến, bắn đạn, tự sát, boss) đều đọc
+/// từ `EnemyData` trong `EnemyDatabase`. Không cần class riêng cho từng loại.
 class Enemy extends PositionComponent
     with HasGameReference<RPGGame>, CollisionCallbacks {
+  final String id;
+  late final EnemyData data;
+
   int level = 1;
   double hp = 50.0;
-  late final double maxHp;
+  double maxHp = 50.0;
   double speed = 50.0;
-
-  // Thông số tấn công
-  double attackRange = 60.0;
-  double attackCooldown = 1.5;
-  double remainingAttackCooldown = 0;
-  double attackDamage = 10.0;
+  double preferredRange = 0;
 
   // Knockback & Stun
   double stunTimer = 0;
   Vector2 knockbackVelocity = Vector2.zero();
+  double knockbackResist = 0;
+
+  // Cooldown tấn công hiện tại
+  double remainingAttackCooldown = 0;
+
+  // Pattern luân phiên nhiều attackStyle (dùng cho boss)
+  late final List<AttackStyle> _attackStyles;
+  int _currentStyleIndex = 0;
+  double _phaseTimer = 0;
+
+  // Tự sát (SuicideAttack)
+  bool _exploded = false;
+  bool _isSuicide = false;
+  double _explosionDamage = 0;
+  double _explodeRange = 0;
+  double _blastRadius = 0;
 
   late final RectangleComponent body;
   late final RectangleComponent hpBar;
@@ -41,17 +59,57 @@ class Enemy extends PositionComponent
   EnemyState state = EnemyState.idle;
 
   /// EXP thưởng khi tiêu diệt enemy
-  double get xpReward => 20.0 + level * 10.0;
+  double get xpReward => data.xpBase + level * 10.0;
 
-  /// Màu sắc gốc — subclass có thể override
-  Color get baseColor => Colors.red;
-  /// Màu khi trúng đòn — subclass có thể override
-  Color get hitColor => Colors.orange;
+  /// Màu sắc gốc — lấy từ data-driven config
+  Color get baseColor => data.color;
+  /// Màu khi trúng đòn — lấy từ data-driven config
+  Color get hitColor => data.hitColor;
 
-  Enemy({required Vector2 position, Vector2? size, this.level = 1})
-    : super(position: position, size: size ?? Vector2.all(40), anchor: Anchor.center) {
+  /// AttackStyle đang dùng (style hiện tại trong pattern)
+  AttackStyle get currentStyle => _attackStyles[_currentStyleIndex];
+
+  /// Tầm đánh của style hiện tại (suicide dùng distance riêng)
+  double get currentAttackRange {
+    final s = currentStyle;
+    if (s is MeleeAttack) return s.range;
+    if (s is RangedAttack) return s.range;
+    return 0;
+  }
+
+  Enemy({
+    required Vector2 position,
+    required this.id,
+    this.level = 1,
+  }) : super(position: position, anchor: Anchor.center) {
+    data = EnemyDatabase.get(id);
+    size = Vector2.all(data.size);
     spawnPosition = position.clone();
+    _attackStyles = data.attackStyles.isEmpty ? [MeleeAttack()] : data.attackStyles;
+    _applyEnemyData();
     _applyLevelScaling();
+  }
+
+  /// Áp stats chung từ EnemyData
+  void _applyEnemyData() {
+    hp = data.baseHp;
+    maxHp = hp;
+    speed = data.baseSpeed;
+    detectionRange = data.detectionRange;
+    tetherRange = data.tetherRange;
+    preferredRange = data.preferredRange;
+    knockbackResist = data.knockbackResist;
+
+    // Kiểm tra có phải quái suicide không
+    for (final s in _attackStyles) {
+      if (s is SuicideAttack) {
+        _isSuicide = true;
+        _explosionDamage = s.explosionDamage;
+        _explodeRange = s.explodeRange;
+        _blastRadius = s.blastRadius;
+        break;
+      }
+    }
   }
 
   /// Scale stats theo level
@@ -60,13 +118,37 @@ class Enemy extends PositionComponent
     hp = hp * scale;
     maxHp = hp;
     speed = speed * (1.0 + (level - 1) * 0.1);
-    attackDamage = attackDamage * scale;
   }
 
   @override
   Future<void> onLoad() async {
-    body = RectangleComponent(size: size, paint: Paint()..color = baseColor);
+    body = RectangleComponent(
+      size: size,
+      paint: Paint()..color = baseColor.withAlpha(40),
+    );
     add(body);
+
+    if (data.path.contains('.') || data.path.contains('/')) {
+      final sprite = await game.loadSprite(data.path);
+      body.add(SpriteComponent(
+        sprite: sprite,
+        size: size,
+        anchor: Anchor.center,
+        position: size / 2,
+      ));
+    } else {
+      body.add(TextComponent(
+        text: data.path,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            fontSize: size.x * 0.7,
+            fontFamily: 'Arial',
+          ),
+        ),
+        anchor: Anchor.center,
+        position: size / 2,
+      ));
+    }
 
     // Thêm collision area
     add(RectangleHitbox());
@@ -104,8 +186,18 @@ class Enemy extends PositionComponent
       position.add(knockbackVelocity * dt);
       knockbackVelocity *= 0.9; // Ma sát làm chậm lực đẩy
       position = WorldConfig.wrapPosition(position);
+      _finishUpdate(dt);
       return; // Không làm gì khác khi bị choáng
     }
+
+    // Nếu là quái tự sát (suicide), lao thẳng vào player rồi nổ
+    if (_isSuicide && !_exploded) {
+      _updateSuicide(dt, distToPlayer);
+      return;
+    }
+
+    // Cập nhật pattern (đổi attackStyle định kỳ nếu có phaseInterval)
+    _updatePattern(dt);
 
     if (remainingAttackCooldown > 0) {
       remainingAttackCooldown -= dt;
@@ -124,7 +216,8 @@ class Enemy extends PositionComponent
       if (distToSpawn > tetherRange) {
         state = EnemyState.returning;
       } else {
-        if (distToPlayer > attackRange) {
+        final range = currentAttackRange;
+        if (distToPlayer > range) {
           // Nếu ở xa, đuổi theo người chơi (có tính wrapping)
           final direction = WorldConfig.wrappedDirection(position, player.position);
           position.add(direction * speed * dt);
@@ -134,7 +227,7 @@ class Enemy extends PositionComponent
             performAttack();
           }
           // Khi đang trong cooldown, enemy đứng yên để người chơi có cơ hội né
-          // Với RangedEnemy: lùi lại để giữ khoảng cách
+          // Với ranged: lùi lại để giữ khoảng cách
           handleInRange(dt, distToPlayer);
         }
       }
@@ -155,6 +248,21 @@ class Enemy extends PositionComponent
     // Wrap position
     position = WorldConfig.wrapPosition(position);
 
+    _finishUpdate(dt);
+  }
+
+  /// Luân phiên attackStyle định kỳ (chỉ hiệu lực khi phaseInterval > 0)
+  void _updatePattern(double dt) {
+    if (_attackStyles.length <= 1 || data.phaseInterval <= 0) return;
+    _phaseTimer += dt;
+    if (_phaseTimer >= data.phaseInterval) {
+      _phaseTimer = 0;
+      _currentStyleIndex = (_currentStyleIndex + 1) % _attackStyles.length;
+    }
+  }
+
+  /// Cập nhật chung: y-sort, thanh máu, xử lý chết
+  void _finishUpdate(double dt) {
     // Y-sorting
     priority = position.y.toInt();
 
@@ -164,7 +272,7 @@ class Enemy extends PositionComponent
     // Cập nhật thanh Ghost HP (co lại từ từ sau khi thanh chính tụt)
     if (ghostHpBar.width > hpBar.width) {
       // Giảm dần chiều rộng thanh trắng (tốc độ co lại)
-      ghostHpBar.width -= 50 * dt;
+      ghostHpBar.width -= 50 * 0.016;
       if (ghostHpBar.width < hpBar.width) {
         ghostHpBar.width = hpBar.width;
       }
@@ -176,38 +284,127 @@ class Enemy extends PositionComponent
     if (hp <= 0) {
       game.addScore(1);
       game.player.addXP(xpReward);
-      if (this is! Boss) {
-        game.scheduleEnemyRespawn(currentSpawnPos, level, this is RangedEnemy);
+      // Nếu là suicide, nổ khi chết
+      if (_isSuicide && !_exploded) {
+        explode();
+      }
+      // Respawn theo cấu hình data-driven (boss/imp không respawn)
+      if (data.canRespawn) {
+        game.scheduleEnemyRespawn(spawnPosition ?? position, level, id);
       }
       removeFromParent();
     }
   }
 
-  void performAttack() {
-    remainingAttackCooldown = attackCooldown;
+  /// Logic quái tự sát: lao vào player rồi nổ
+  void _updateSuicide(double dt, double distToPlayer) {
+    final player = game.player;
+    if (state == EnemyState.chasing) {
+      final dir = WorldConfig.wrappedDirection(position, player.position);
+      position.add(dir * speed * 1.5 * dt);
+      position = WorldConfig.wrapPosition(position);
+      if (distToPlayer <= _explodeRange) {
+        explode();
+        return;
+      }
+    }
+    _finishUpdate(dt);
+  }
 
-    // Hướng tấn công tới người chơi (có tính wrapping)
+  void performAttack() {
+    final style = currentStyle;
+
+    if (style is RangedAttack) {
+      remainingAttackCooldown = style.cooldown;
+      _performRanged(style);
+    } else if (style is MeleeAttack) {
+      remainingAttackCooldown = style.cooldown;
+      _performMelee(style);
+    } else if (style is SuicideAttack) {
+      // Quái tự sát không tấn công phạm vi — tự xử lý trong update
+      return;
+    }
+  }
+
+  /// Đòn cận chiến: vệt chém sát thương
+  void _performMelee(MeleeAttack style) {
     final dir = WorldConfig.wrappedDirection(position, game.player.position);
-    
-    // Quay mặt về phía người chơi khi đánh
     if (dir.x < 0 && scale.x > 0) {
       flipHorizontallyAroundCenter();
     } else if (dir.x > 0 && scale.x < 0) {
       flipHorizontallyAroundCenter();
     }
 
+    // Sát thương scale theo level
+    final dmg = style.damage * (1.0 + (level - 1) * 0.3);
+
     // Hiệu ứng "gồng" đòn (nháy màu trắng trước khi đánh)
     body.paint.color = Colors.white;
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!isMounted) return;
       body.paint.color = baseColor;
-
-      // Tạo hiệu ứng vệt chém thực sự — đây là đòn đánh có hitbox riêng
-      game.world.add(EnemyAttackEffect(position: position.clone(), direction: dir, damage: attackDamage));
-
-      // Rung nhẹ khi quái tung đòn
+      game.world.add(EnemyAttackEffect(position: position.clone(), direction: dir, damage: dmg));
       game.shake(intensity: 1);
     });
+  }
+
+  /// Đòn bắn đạn dùng chung — nhận cấu hình từ `RangedAttack` model.
+  void _performRanged(RangedAttack style) {
+    body.paint.color = Colors.white;
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (!isMounted) return;
+      body.paint.color = baseColor;
+
+      // Sát thương scale theo level
+      final dmg = style.damage * (1.0 + (level - 1) * 0.3);
+
+      for (int i = 0; i < style.count; i++) {
+        Vector2 dir;
+        if (style.spread) {
+          // Tỏa đều vòng tròn
+          final angle = (i * (360 / style.count)) * 0.0174533;
+          dir = Vector2(math.cos(angle), math.sin(angle));
+        } else {
+          final player = game.player;
+          // Nhắm về phía player
+          if (style.count == 1) {
+            final diff = player.position - position;
+            if (diff.length < 10) return;
+            dir = diff.normalized();
+          } else {
+            // Nhiều đạn nhắm player, chệch nhẹ mỗi phát
+            final baseAngle = (player.position - position).angleTo(Vector2(1, 0));
+            final angle = baseAngle + (i - (style.count - 1) / 2) * 0.2;
+            dir = Vector2(math.cos(angle), math.sin(angle));
+          }
+        }
+
+        game.world.add(Bullet(
+          position: position.clone() + dir * (size.x / 2 + 5),
+          direction: dir,
+          color: style.color,
+          damage: dmg,
+        )..speed = style.speed);
+      }
+      game.shake(intensity: 1);
+    });
+  }
+
+  /// Kích nổ quái tự sát — gây sát thương diện rộng quanh vị trí
+  void explode() {
+    if (_exploded) return;
+    _exploded = true;
+
+    final player = game.player;
+    final dist = WorldConfig.wrappedDistance(position, player.position);
+    if (dist <= _blastRadius) {
+      final dir = WorldConfig.wrappedDirection(position, player.position);
+      player.takeDamage(_explosionDamage, knockbackDirection: dir);
+    }
+
+    game.shake(intensity: 6, duration: 0.3);
+    game.showHitEffect(position.clone(), Colors.orange);
+    removeFromParent();
   }
 
   @override
@@ -242,9 +439,15 @@ class Enemy extends PositionComponent
     }
   }
 
-  /// Hook cho subclass xử lý khi enemy đang trong phạm vi tấn công (giữa các đòn)
+  /// Hook xử lý khi đang trong phạm vi tấn công (giữa các đòn)
   void handleInRange(double dt, double distance) {
-    // Mặc định không làm gì — enemy thường đứng yên
+    // Với ranged: lùi lại giữ khoảng cách nếu player quá gần
+    if (currentStyle is RangedAttack && preferredRange > 0) {
+      if (distance < preferredRange - 30) {
+        final dir = WorldConfig.wrappedDirection(game.player.position, position);
+        position.add(dir * speed * 1.5 * dt);
+      }
+    }
   }
 
   void takeDamage(double damage, {Vector2? knockbackDirection}) {
@@ -254,9 +457,9 @@ class Enemy extends PositionComponent
     game.shake(intensity: 2); // Rung nhẹ khi quái trúng đòn
     game.showHitEffect(position.clone(), Colors.orange); // Hiệu ứng tia lửa
 
-    // Nếu không trong trạng thái choáng thì mới bị đẩy lùi
+    // Nếu không trong trạng thái choáng thì mới bị đẩy lùi (có kháng knockback)
     if (stunTimer <= 0 && knockbackDirection != null) {
-      knockbackVelocity = knockbackDirection * 200; // Độ mạnh của lực đẩy
+      knockbackVelocity = knockbackDirection * (200 * (1 - knockbackResist)); // Độ mạnh của lực đẩy
     }
 
     // Luôn bị khựng lại một chút khi trúng đòn

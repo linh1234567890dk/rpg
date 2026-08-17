@@ -11,8 +11,6 @@ import 'components/enemy.dart';
 import 'components/skill_button.dart';
 import 'components/aim_indicator.dart';
 import 'components/target_lock_indicator.dart';
-import 'components/boss.dart';
-import 'components/ranged_enemy.dart';
 import 'components/location_name_popup.dart';
 import 'components/minimap.dart';
 import 'world/world_map.dart';
@@ -62,7 +60,6 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     attackButton = SkillButton(
       type: SkillType.normal,
       position: Vector2.zero(),
-      cooldown: 0.5,
       onAction: () => _handleSkill(SkillType.normal, null),
       onAimAction: (dir) => _handleSkill(SkillType.normal, dir),
     );
@@ -70,7 +67,6 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     skillButton = SkillButton(
       type: SkillType.special,
       position: Vector2.zero(),
-      cooldown: 3.0,
       onAction: () => _handleSkill(SkillType.special, null),
       onAimAction: (dir) => _handleSkill(SkillType.special, dir),
     );
@@ -78,7 +74,6 @@ class RPGGame extends FlameGame with HasCollisionDetection {
     dashButton = SkillButton(
       type: SkillType.dash,
       position: Vector2.zero(),
-      cooldown: 1.5,
       onAction: () {
         final dir = Vector2(player.scale.x > 0 ? 1 : -1, 0);
         _handleSkill(SkillType.dash, dir);
@@ -283,30 +278,28 @@ class RPGGame extends FlameGame with HasCollisionDetection {
         if (!foundValidPos) continue;
 
         final level = rnd.nextInt(zone.maxLevel - zone.minLevel + 1) + zone.minLevel;
-        final isRanged = zone.enemyTypes.contains('ranged') && rnd.nextDouble() < 0.4;
+        // Chọn loại enemy ngẫu nhiên từ danh sách enemyIds của zone
+        final id = zone.enemyIds[rnd.nextInt(zone.enemyIds.length)];
         
-        if (isRanged) {
-          world.add(RangedEnemy(position: spawnPos, level: level)..spawnPosition = spawnPos.clone());
-        } else {
-          world.add(Enemy(position: spawnPos, level: level)..spawnPosition = spawnPos.clone());
-        }
+        world.add(createEnemy(id, spawnPos, level)..spawnPosition = spawnPos.clone());
       }
     }
 
     // Spawn Boss tại Núi Lửa Tử Thần (4000, 1500)
-    world.add(Boss(position: Vector2(4000, 1500))..spawnPosition = Vector2(4000, 1500));
+    world.add(createEnemy('molten_king', Vector2(4000, 1500), 1)..spawnPosition = Vector2(4000, 1500));
   }
 
-  void scheduleEnemyRespawn(Vector2 spawnPos, int level, bool isRanged) {
+  /// Factory tạo enemy dựa trên id (data-driven, tra cứu EnemyDatabase)
+  Enemy createEnemy(String id, Vector2 position, int level) {
+    return Enemy(position: position, id: id, level: level);
+  }
+
+  void scheduleEnemyRespawn(Vector2 spawnPos, int level, String id) {
     world.add(TimerComponent(
       period: 10,
       repeat: false,
       onTick: () {
-        if (isRanged) {
-          world.add(RangedEnemy(position: spawnPos.clone(), level: level)..spawnPosition = spawnPos.clone());
-        } else {
-          world.add(Enemy(position: spawnPos.clone(), level: level)..spawnPosition = spawnPos.clone());
-        }
+        world.add(createEnemy(id, spawnPos.clone(), level)..spawnPosition = spawnPos.clone());
       },
     ));
   }
